@@ -9,6 +9,8 @@
     "dev:backend": "nodemon backend/src/server.js",
     "start:backend": "node backend/src/server.js",
     "seed:users": "node backend/src/scripts/seed-users.js",
+    "test:backend": "vitest run backend/src/__tests__",
+    "test:backend:watch": "vitest backend/src/__tests__",
     "build": "vite build",
     "preview": "vite preview"
   },
@@ -25,6 +27,8 @@
     "@vitejs/plugin-react": "^4.3.4",
     "concurrently": "^9.2.1",
     "nodemon": "^3.1.14",
-    "vite": "^5.4.11"
+    "supertest": "^7.2.2",
+    "vite": "^5.4.11",
+    "vitest": "^4.0.18"
   }
 }

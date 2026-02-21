@@ -41,6 +41,12 @@ This starts:
 - Frontend: `http://localhost:5173`
 - Backend: `http://localhost:4000`
 
+### Run backend tests
+
+```bash
+npm run test:backend
+```
+
 ### Backend API endpoints
 - `GET /api/health`
 - `GET /api/dashboard/summary`
