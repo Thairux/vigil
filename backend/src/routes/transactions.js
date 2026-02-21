@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { z } from "zod";
+import { requireRole } from "../middleware/auth.js";
 import { scoreEventRisk } from "../lib/risk.js";
 import { supabase } from "../lib/supabase.js";
 
@@ -14,7 +15,7 @@ const createTransactionSchema = z.object({
 
 export const transactionsRouter = Router();
 
-transactionsRouter.post("/", async (req, res, next) => {
+transactionsRouter.post("/", requireRole(["admin", "analyst", "customer"]), async (req, res, next) => {
   try {
     const payload = createTransactionSchema.parse(req.body);
     const risk = scoreEventRisk(payload);
@@ -87,4 +88,3 @@ transactionsRouter.post("/", async (req, res, next) => {
     next(error);
   }
 });
-

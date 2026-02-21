@@ -1,8 +1,18 @@
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:4000/api";
+let authTokenProvider = null;
+
+export function setApiAuthTokenProvider(provider) {
+  authTokenProvider = provider;
+}
 
 async function request(path, options = {}) {
+  const token = authTokenProvider ? await authTokenProvider() : null;
   const response = await fetch(`${API_BASE_URL}${path}`, {
-    headers: { "Content-Type": "application/json", ...(options.headers || {}) },
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(options.headers || {}),
+    },
     ...options,
   });
 
@@ -42,5 +52,8 @@ export const api = {
   },
   getDashboardSummary() {
     return request("/dashboard/summary");
+  },
+  getMe() {
+    return request("/auth/me");
   },
 };

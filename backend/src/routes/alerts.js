@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { z } from "zod";
+import { requireRole } from "../middleware/auth.js";
 import { supabase } from "../lib/supabase.js";
 
 const updateAlertSchema = z.object({
@@ -11,7 +12,7 @@ const updateAlertSchema = z.object({
 
 export const alertsRouter = Router();
 
-alertsRouter.get("/", async (req, res, next) => {
+alertsRouter.get("/", requireRole(["admin", "analyst"]), async (req, res, next) => {
   try {
     const status = req.query.status ? String(req.query.status) : null;
     const limit = Number(req.query.limit ?? 50);
@@ -34,7 +35,7 @@ alertsRouter.get("/", async (req, res, next) => {
   }
 });
 
-alertsRouter.patch("/:alertId", async (req, res, next) => {
+alertsRouter.patch("/:alertId", requireRole(["admin", "analyst"]), async (req, res, next) => {
   try {
     const alertId = z.string().uuid().parse(req.params.alertId);
     const payload = updateAlertSchema.parse(req.body);
@@ -63,4 +64,3 @@ alertsRouter.patch("/:alertId", async (req, res, next) => {
     next(error);
   }
 });
-

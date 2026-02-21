@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { api } from "./api";
+import { api, setApiAuthTokenProvider } from "./api";
+import { hasSupabaseClientConfig, supabaseClient } from "./supabaseClient";
 
 // ─── MOCK DATA ────────────────────────────────────────────────────────────────
 const FALLBACK_USERS = [
@@ -243,6 +244,55 @@ export default function Vigil() {
   const alertListRef = useRef(null);
   const prevAlertCount = useRef(0);
   const [apiError, setApiError] = useState("");
+  const [authReady, setAuthReady] = useState(false);
+  const [authSession, setAuthSession] = useState(null);
+  const [authEmail, setAuthEmail] = useState("");
+  const [authPassword, setAuthPassword] = useState("");
+  const [authError, setAuthError] = useState("");
+  const [authLoading, setAuthLoading] = useState(false);
+  const [authProfile, setAuthProfile] = useState(null);
+
+  useEffect(() => {
+    setApiAuthTokenProvider(async () => {
+      if (!supabaseClient) return null;
+      const { data } = await supabaseClient.auth.getSession();
+      return data.session?.access_token || null;
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!supabaseClient) {
+      setAuthReady(true);
+      return;
+    }
+
+    let mounted = true;
+    supabaseClient.auth.getSession().then(({ data }) => {
+      if (!mounted) return;
+      setAuthSession(data.session || null);
+      setAuthReady(true);
+    });
+
+    const { data: listener } = supabaseClient.auth.onAuthStateChange((_event, session) => {
+      setAuthSession(session || null);
+    });
+
+    return () => {
+      mounted = false;
+      listener.subscription.unsubscribe();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!authSession) {
+      setAuthProfile(null);
+      return;
+    }
+    api
+      .getMe()
+      .then((res) => setAuthProfile(res.user))
+      .catch((error) => setApiError(error.message || "Failed to load auth profile"));
+  }, [authSession]);
 
   const refreshData = useCallback(async () => {
     const [usersRes, eventsRes, alertsRes] = await Promise.all([
@@ -293,6 +343,9 @@ export default function Vigil() {
   }, []);
 
   useEffect(() => {
+    if (!authReady) return;
+    if (hasSupabaseClientConfig && !authSession) return;
+
     let isMounted = true;
 
     const load = async () => {
@@ -309,7 +362,7 @@ export default function Vigil() {
       isMounted = false;
       clearInterval(interval);
     };
-  }, [refreshData]);
+  }, [authReady, authSession, refreshData]);
 
   // Live indicator pulse
   useEffect(() => {
@@ -392,7 +445,60 @@ export default function Vigil() {
     }
   }, [refreshData]);
 
+  const signIn = useCallback(async () => {
+    if (!supabaseClient) return;
+    setAuthLoading(true);
+    setAuthError("");
+    try {
+      const { error } = await supabaseClient.auth.signInWithPassword({
+        email: authEmail.trim(),
+        password: authPassword,
+      });
+      if (error) throw error;
+    } catch (error) {
+      setAuthError(error.message || "Sign in failed");
+    } finally {
+      setAuthLoading(false);
+    }
+  }, [authEmail, authPassword]);
+
+  const signOut = useCallback(async () => {
+    if (!supabaseClient) return;
+    await supabaseClient.auth.signOut();
+  }, []);
+
   const styles = getStyles();
+
+  if (!authReady) {
+    return (
+      <div style={{ minHeight: "100vh", background: "#070a12", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'DM Sans', sans-serif" }}>
+        Initializing authentication...
+      </div>
+    );
+  }
+
+  if (hasSupabaseClientConfig && !authSession) {
+    return (
+      <div style={{ minHeight: "100vh", background: "radial-gradient(circle at 20% 20%, #0d1d2a 0%, #070a12 45%)", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'DM Sans', sans-serif", padding: "20px" }}>
+        <div style={{ width: "100%", maxWidth: "420px", border: "1px solid rgba(0,229,160,0.2)", background: "rgba(12,15,25,0.9)", borderRadius: "14px", padding: "22px" }}>
+          <div style={{ color: "#00e5a0", fontFamily: "'Space Mono', monospace", letterSpacing: "2px", fontSize: "12px", marginBottom: "8px" }}>VIGIL AUTH</div>
+          <h2 style={{ margin: "0 0 16px", fontSize: "24px" }}>Sign in to continue</h2>
+          <div style={{ marginBottom: "10px" }}>
+            <div style={{ fontSize: "12px", color: "rgba(255,255,255,0.5)", marginBottom: "6px" }}>Email</div>
+            <input value={authEmail} onChange={(e) => setAuthEmail(e.target.value)} style={{ width: "100%", background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: "8px", color: "#fff", padding: "10px 12px" }} />
+          </div>
+          <div style={{ marginBottom: "12px" }}>
+            <div style={{ fontSize: "12px", color: "rgba(255,255,255,0.5)", marginBottom: "6px" }}>Password</div>
+            <input type="password" value={authPassword} onChange={(e) => setAuthPassword(e.target.value)} style={{ width: "100%", background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: "8px", color: "#fff", padding: "10px 12px" }} />
+          </div>
+          {authError && <div style={{ color: "#ff8c00", fontSize: "12px", marginBottom: "10px" }}>{authError}</div>}
+          <button onClick={signIn} disabled={authLoading || !authEmail || !authPassword} style={{ width: "100%", background: "rgba(0,229,160,0.15)", border: "1px solid rgba(0,229,160,0.35)", borderRadius: "10px", color: "#00e5a0", padding: "11px 12px", fontWeight: "600", cursor: "pointer" }}>
+            {authLoading ? "Signing in..." : "Sign In"}
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div style={styles.root}>
@@ -424,10 +530,20 @@ export default function Vigil() {
             <span style={{ ...styles.liveDot, opacity: liveIndicator ? 1 : 0.3 }} />
             LIVE
           </div>
+          {authProfile?.role && (
+            <div style={{ ...styles.liveChip, background: "rgba(123,140,255,0.1)", borderColor: "rgba(123,140,255,0.25)", color: "#7b8cff" }}>
+              ROLE: {String(authProfile.role).toUpperCase()}
+            </div>
+          )}
           {newAlertCount > 0 && (
             <div style={styles.alertBadge} onClick={() => { setActiveTab("alerts"); setView("dashboard"); setNewAlertCount(0); }}>
               <span>⚠</span> {newAlertCount} new
             </div>
+          )}
+          {hasSupabaseClientConfig && (
+            <button style={{ ...styles.filterBtn, fontSize: "11px" }} onClick={signOut}>
+              Sign Out
+            </button>
           )}
         </div>
       </nav>

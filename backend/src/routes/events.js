@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { z } from "zod";
+import { requireRole } from "../middleware/auth.js";
 import { scoreEventRisk } from "../lib/risk.js";
 import { supabase } from "../lib/supabase.js";
 
@@ -14,7 +15,7 @@ const createEventSchema = z.object({
 
 export const eventsRouter = Router();
 
-eventsRouter.get("/", async (req, res, next) => {
+eventsRouter.get("/", requireRole(["admin", "analyst"]), async (req, res, next) => {
   try {
     const limit = Number(req.query.limit ?? 50);
     const safeLimit = Number.isNaN(limit) ? 50 : Math.min(Math.max(limit, 1), 200);
@@ -39,7 +40,7 @@ eventsRouter.get("/", async (req, res, next) => {
   }
 });
 
-eventsRouter.post("/", async (req, res, next) => {
+eventsRouter.post("/", requireRole(["admin", "analyst", "customer"]), async (req, res, next) => {
   try {
     const payload = createEventSchema.parse(req.body);
     const risk = scoreEventRisk(payload);
@@ -94,4 +95,3 @@ eventsRouter.post("/", async (req, res, next) => {
     next(error);
   }
 });
-

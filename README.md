@@ -18,6 +18,7 @@ Required variables:
 
 Optional frontend variable:
 - `VITE_API_BASE_URL` (defaults to `http://localhost:4000/api`)
+- `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` for login and realtime in the frontend
 
 ### 2) Create database tables
 
@@ -49,6 +50,18 @@ This starts:
 - `GET /api/alerts`
 - `PATCH /api/alerts/:alertId`
 - `POST /api/transactions`
+
+All `/api/*` routes except `/api/health` require a Supabase bearer token.
+
+### Auth and Roles
+
+Vigil reads role from Supabase user metadata:
+- `app_metadata.role` or `user_metadata.role`
+- supported roles: `admin`, `analyst`, `customer`
+
+Role access:
+- `admin` / `analyst`: dashboard reads, alerts management
+- `customer`: event/transaction creation
 
 ## Run locally
 

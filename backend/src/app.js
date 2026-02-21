@@ -1,11 +1,13 @@
 import cors from "cors";
 import express from "express";
 import { alertsRouter } from "./routes/alerts.js";
+import { authRouter } from "./routes/auth.js";
 import { dashboardRouter } from "./routes/dashboard.js";
 import { eventsRouter } from "./routes/events.js";
 import { healthRouter } from "./routes/health.js";
 import { transactionsRouter } from "./routes/transactions.js";
 import { usersRouter } from "./routes/users.js";
+import { requireAuth, requireRole } from "./middleware/auth.js";
 
 export const app = express();
 
@@ -20,11 +22,12 @@ app.get("/", (_req, res) => {
 });
 
 app.use("/api/health", healthRouter);
-app.use("/api/dashboard", dashboardRouter);
-app.use("/api/users", usersRouter);
-app.use("/api/events", eventsRouter);
-app.use("/api/alerts", alertsRouter);
-app.use("/api/transactions", transactionsRouter);
+app.use("/api/auth", authRouter);
+app.use("/api/dashboard", requireAuth, requireRole(["admin", "analyst"]), dashboardRouter);
+app.use("/api/users", requireAuth, requireRole(["admin", "analyst"]), usersRouter);
+app.use("/api/events", requireAuth, eventsRouter);
+app.use("/api/alerts", requireAuth, alertsRouter);
+app.use("/api/transactions", requireAuth, transactionsRouter);
 
 app.use((err, _req, res, _next) => {
   // Centralized error shape for frontend/API clients.
