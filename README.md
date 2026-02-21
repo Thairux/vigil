@@ -20,7 +20,13 @@ Required variables:
 
 Run the SQL in `supabase/schema.sql` in the Supabase SQL Editor.
 
-### 3) Run frontend + backend
+### 3) Seed initial users
+
+```bash
+npm run seed:users
+```
+
+### 4) Run frontend + backend
 
 ```bash
 npm install
@@ -33,6 +39,7 @@ This starts:
 
 ### Backend API endpoints
 - `GET /api/health`
+- `GET /api/dashboard/summary`
 - `GET /api/users`
 - `GET /api/events`
 - `POST /api/events`

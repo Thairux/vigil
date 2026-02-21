@@ -8,6 +8,7 @@
     "dev:frontend": "vite",
     "dev:backend": "nodemon backend/src/server.js",
     "start:backend": "node backend/src/server.js",
+    "seed:users": "node backend/src/scripts/seed-users.js",
     "build": "vite build",
     "preview": "vite preview"
   },

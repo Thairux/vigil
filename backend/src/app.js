@@ -1,6 +1,7 @@
 import cors from "cors";
 import express from "express";
 import { alertsRouter } from "./routes/alerts.js";
+import { dashboardRouter } from "./routes/dashboard.js";
 import { eventsRouter } from "./routes/events.js";
 import { healthRouter } from "./routes/health.js";
 import { transactionsRouter } from "./routes/transactions.js";
@@ -19,6 +20,7 @@ app.get("/", (_req, res) => {
 });
 
 app.use("/api/health", healthRouter);
+app.use("/api/dashboard", dashboardRouter);
 app.use("/api/users", usersRouter);
 app.use("/api/events", eventsRouter);
 app.use("/api/alerts", alertsRouter);
@@ -35,4 +37,3 @@ app.use((err, _req, res, _next) => {
     details,
   });
 });
-
