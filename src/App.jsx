@@ -120,18 +120,22 @@ function normalizeAlert(alert, userById, eventById) {
 // ─── SPARKLINE COMPONENT ──────────────────────────────────────────────────────
 function Sparkline({ data, color = "#00e5a0", height = 40, width = 120 }) {
   if (!data || data.length < 2) return null;
+  const svgWidth = typeof width === "number" ? width : Number.parseFloat(width);
+  const svgHeight = typeof height === "number" ? height : Number.parseFloat(height);
+  if (!Number.isFinite(svgWidth) || !Number.isFinite(svgHeight) || svgWidth <= 0 || svgHeight <= 0) return null;
+
   const max = Math.max(...data);
   const min = Math.min(...data);
   const range = max - min || 1;
   const pts = data.map((v, i) => {
-    const x = (i / (data.length - 1)) * width;
-    const y = height - ((v - min) / range) * height;
+    const x = (i / (data.length - 1)) * svgWidth;
+    const y = svgHeight - ((v - min) / range) * svgHeight;
     return `${x},${y}`;
   });
   const path = `M ${pts.join(" L ")}`;
-  const fill = `M ${pts[0]} L ${pts.join(" L ")} L ${width},${height} L 0,${height} Z`;
+  const fill = `M ${pts[0]} L ${pts.join(" L ")} L ${svgWidth},${svgHeight} L 0,${svgHeight} Z`;
   return (
-    <svg width={width} height={height} style={{ overflow: "visible" }}>
+    <svg width={svgWidth} height={svgHeight} style={{ overflow: "visible" }}>
       <defs>
         <linearGradient id={`sg-${color.replace("#", "")}`} x1="0" y1="0" x2="0" y2="1">
           <stop offset="0%" stopColor={color} stopOpacity="0.3" />
