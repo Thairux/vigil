@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { z } from "zod";
 import { requireRole } from "../middleware/auth.js";
+import { findUserProfileByAuth } from "../lib/profile.js";
 import { scoreEventRisk } from "../lib/risk.js";
 import { supabase } from "../lib/supabase.js";
 
@@ -15,7 +16,7 @@ const createEventSchema = z.object({
 
 export const eventsRouter = Router();
 
-eventsRouter.get("/", requireRole(["admin", "analyst"]), async (req, res, next) => {
+eventsRouter.get("/", requireRole(["admin", "analyst", "customer"]), async (req, res, next) => {
   try {
     const limit = Number(req.query.limit ?? 50);
     const safeLimit = Number.isNaN(limit) ? 50 : Math.min(Math.max(limit, 1), 200);
@@ -31,6 +32,14 @@ eventsRouter.get("/", requireRole(["admin", "analyst"]), async (req, res, next) 
       query = query.eq("is_risky", true);
     }
 
+    if (req.auth.role === "customer") {
+      const profile = await findUserProfileByAuth(req.auth);
+      if (!profile) {
+        return res.status(404).json({ error: "No profile mapped for authenticated customer" });
+      }
+      query = query.eq("user_id", profile.id);
+    }
+
     const { data, error } = await query;
     if (error) throw error;
 
@@ -43,6 +52,16 @@ eventsRouter.get("/", requireRole(["admin", "analyst"]), async (req, res, next) 
 eventsRouter.post("/", requireRole(["admin", "analyst", "customer"]), async (req, res, next) => {
   try {
     const payload = createEventSchema.parse(req.body);
+    if (req.auth.role === "customer") {
+      const profile = await findUserProfileByAuth(req.auth);
+      if (!profile) {
+        return res.status(404).json({ error: "No profile mapped for authenticated customer" });
+      }
+      if (payload.userId !== profile.id) {
+        return res.status(403).json({ error: "Customers can only create events for their mapped profile" });
+      }
+    }
+
     const risk = scoreEventRisk(payload);
 
     const eventToInsert = {

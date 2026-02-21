@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { z } from "zod";
+import { findUserProfileByAuth } from "../lib/profile.js";
 import { requireRole } from "../middleware/auth.js";
 import { scoreEventRisk } from "../lib/risk.js";
 import { supabase } from "../lib/supabase.js";
@@ -18,6 +19,16 @@ export const transactionsRouter = Router();
 transactionsRouter.post("/", requireRole(["admin", "analyst", "customer"]), async (req, res, next) => {
   try {
     const payload = createTransactionSchema.parse(req.body);
+    if (req.auth.role === "customer") {
+      const profile = await findUserProfileByAuth(req.auth);
+      if (!profile) {
+        return res.status(404).json({ error: "No profile mapped for authenticated customer" });
+      }
+      if (payload.userId !== profile.id) {
+        return res.status(403).json({ error: "Customers can only create transactions for their mapped profile" });
+      }
+    }
+
     const risk = scoreEventRisk(payload);
 
     const transactionRecord = {

@@ -30,6 +30,17 @@ Run the SQL in `supabase/schema.sql` in the Supabase SQL Editor.
 npm run seed:users
 ```
 
+Seed an analyst auth account + mapped profile:
+
+```bash
+npm run seed:analyst
+```
+
+Optional env overrides:
+- `ANALYST_EMAIL`
+- `ANALYST_PASSWORD`
+- `ANALYST_NAME`
+
 ### 4) Run frontend + backend
 
 ```bash
@@ -64,6 +75,10 @@ All `/api/*` routes except `/api/health` require a Supabase bearer token.
 Vigil reads role from Supabase user metadata:
 - `app_metadata.role` or `user_metadata.role`
 - supported roles: `admin`, `analyst`, `customer`
+
+Profile mapping:
+- Auth users are mapped to `public.users` via `users.auth_user_id`.
+- `GET /api/auth/me` returns both auth identity and mapped profile.
 
 Role access:
 - `admin` / `analyst`: dashboard reads, alerts management

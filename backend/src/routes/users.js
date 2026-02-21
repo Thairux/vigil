@@ -7,7 +7,7 @@ usersRouter.get("/", async (_req, res, next) => {
   try {
     const { data, error } = await supabase
       .from("users")
-      .select("id, full_name, email, avatar, device, location, created_at")
+      .select("id, auth_user_id, full_name, email, avatar, device, location, role, created_at")
       .order("created_at", { ascending: false });
 
     if (error) throw error;
@@ -16,4 +16,3 @@ usersRouter.get("/", async (_req, res, next) => {
     next(error);
   }
 });
-

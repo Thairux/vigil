@@ -2,13 +2,31 @@ create extension if not exists "pgcrypto";
 
 create table if not exists public.users (
   id uuid primary key default gen_random_uuid(),
+  auth_user_id uuid unique,
   full_name text not null,
   email text unique not null,
+  role text not null default 'customer' check (role in ('admin', 'analyst', 'customer')),
   avatar text,
   device text,
   location text,
   created_at timestamptz not null default now()
 );
+
+alter table public.users add column if not exists auth_user_id uuid;
+alter table public.users add column if not exists role text default 'customer';
+create unique index if not exists idx_users_auth_user_id on public.users(auth_user_id);
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_constraint
+    where conname = 'users_role_check'
+  ) then
+    alter table public.users
+      add constraint users_role_check check (role in ('admin', 'analyst', 'customer'));
+  end if;
+end $$;
 
 create table if not exists public.events (
   id uuid primary key default gen_random_uuid(),
@@ -61,4 +79,3 @@ create index if not exists idx_alerts_status on public.alerts(status);
 create index if not exists idx_alerts_created_at on public.alerts(created_at desc);
 create index if not exists idx_transactions_user_id on public.transactions(user_id);
 create index if not exists idx_transactions_created_at on public.transactions(created_at desc);
-

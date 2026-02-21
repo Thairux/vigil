@@ -9,6 +9,7 @@
     "dev:backend": "nodemon backend/src/server.js",
     "start:backend": "node backend/src/server.js",
     "seed:users": "node backend/src/scripts/seed-users.js",
+    "seed:analyst": "node backend/src/scripts/seed-analyst-user.js",
     "test:backend": "vitest run backend/src/__tests__",
     "test:backend:watch": "vitest backend/src/__tests__",
     "build": "vite build",

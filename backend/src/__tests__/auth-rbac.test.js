@@ -3,15 +3,36 @@ import request from "supertest";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const getUserMock = vi.fn();
+const fromMock = vi.fn((table) => {
+  if (table !== "users") {
+    throw new Error(`Unexpected table query in auth test: ${table}`);
+  }
+
+  const query = {
+    select: vi.fn(() => query),
+    or: vi.fn(() => query),
+    eq: vi.fn(() => query),
+    limit: vi.fn(() => query),
+    maybeSingle: vi.fn(async () => ({
+      data: {
+        id: "profile-1",
+        auth_user_id: "11111111-1111-1111-1111-111111111111",
+        full_name: "Analyst User",
+        email: "analyst@example.com",
+        role: "analyst",
+      },
+      error: null,
+    })),
+  };
+  return query;
+});
 
 vi.mock("../lib/supabase.js", () => ({
   supabase: {
     auth: {
       getUser: getUserMock,
     },
-    from: vi.fn(() => {
-      throw new Error("Database access should not happen in this test");
-    }),
+    from: fromMock,
   },
 }));
 
@@ -20,6 +41,7 @@ const { app } = await import("../app.js");
 describe("auth and rbac middleware", () => {
   beforeEach(() => {
     getUserMock.mockReset();
+    fromMock.mockClear();
     getUserMock.mockImplementation(async (token) => {
       if (token === "analyst-token") {
         return {
@@ -65,11 +87,11 @@ describe("auth and rbac middleware", () => {
     const response = await request(app).get("/api/auth/me").set("Authorization", "Bearer analyst-token");
     expect(response.status).toBe(200);
     expect(response.body.user.role).toBe("analyst");
+    expect(response.body.user.profile.email).toBe("analyst@example.com");
   });
 
   it("blocks customer role from analyst dashboard route", async () => {
-    const response = await request(app).get("/api/events").set("Authorization", "Bearer customer-token");
+    const response = await request(app).get("/api/dashboard/summary").set("Authorization", "Bearer customer-token");
     expect(response.status).toBe(403);
   });
 });
-
