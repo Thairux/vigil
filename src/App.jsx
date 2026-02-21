@@ -383,6 +383,15 @@ export default function Vigil() {
     }
   }, [mobileUser, refreshData]);
 
+  const updateAlert = useCallback(async (alertId, updates) => {
+    try {
+      await api.updateAlert(alertId, updates);
+      await refreshData();
+    } catch (error) {
+      setApiError(error.message || "Failed to update alert");
+    }
+  }, [refreshData]);
+
   const styles = getStyles();
 
   return (
@@ -619,7 +628,25 @@ export default function Vigil() {
                       </div>
                       <div style={styles.alertCardFooter}>
                         <span style={{ color: "rgba(255,255,255,0.3)", fontSize: "11px", fontFamily: "monospace" }}>{a.alertId}</span>
-                        <span style={{ color: "rgba(255,255,255,0.3)", fontSize: "11px" }}>{a.timestamp.toLocaleTimeString()}</span>
+                        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                          {!a.read && (
+                            <button
+                              style={{ ...styles.filterBtn, padding: "4px 8px" }}
+                              onClick={() => updateAlert(a.alertId, { isRead: true, status: "in_review" })}
+                            >
+                              Mark Read
+                            </button>
+                          )}
+                          {a.status !== "resolved" && (
+                            <button
+                              style={{ ...styles.filterBtn, ...styles.filterBtnActive, padding: "4px 8px" }}
+                              onClick={() => updateAlert(a.alertId, { status: "resolved", isRead: true, resolutionNote: "Resolved from dashboard" })}
+                            >
+                              Resolve
+                            </button>
+                          )}
+                          <span style={{ color: "rgba(255,255,255,0.3)", fontSize: "11px" }}>{a.timestamp.toLocaleTimeString()}</span>
+                        </div>
                       </div>
                     </div>
                   ))}

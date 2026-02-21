@@ -31,6 +31,9 @@ export const api = {
     const suffix = query.toString() ? `?${query.toString()}` : "";
     return request(`/alerts${suffix}`);
   },
+  updateAlert(alertId, body) {
+    return request(`/alerts/${alertId}`, { method: "PATCH", body: JSON.stringify(body) });
+  },
   createEvent(body) {
     return request("/events", { method: "POST", body: JSON.stringify(body) });
   },
@@ -41,4 +44,3 @@ export const api = {
     return request("/dashboard/summary");
   },
 };
-
