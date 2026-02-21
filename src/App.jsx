@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef, useCallback } from "react";
+import { api } from "./api";
 
 // ─── MOCK DATA ────────────────────────────────────────────────────────────────
-const USERS = [
+const FALLBACK_USERS = [
   { id: "U001", name: "Sophia Mercer", email: "s.mercer@nexcorp.io", avatar: "SM", device: "MacBook Pro", location: "New York, US" },
   { id: "U002", name: "Rajan Patel", email: "r.patel@nexcorp.io", avatar: "RP", device: "iPhone 15", location: "London, UK" },
   { id: "U003", name: "Lena Voss", email: "l.voss@nexcorp.io", avatar: "LV", device: "Windows PC", location: "Berlin, DE" },
@@ -9,44 +10,16 @@ const USERS = [
   { id: "U005", name: "Yuki Tanaka", email: "y.tanaka@nexcorp.io", avatar: "YT", device: "iPad Pro", location: "Tokyo, JP" },
 ];
 
-const RISK_REASONS = [
-  "Unusual transaction amount",
-  "New device detected",
-  "Off-hours login",
-  "Multiple failed attempts",
-  "Geographic anomaly",
-  "Rapid successive transactions",
-  "VPN usage detected",
-  "Credential sharing suspected",
-  "Unusual browsing pattern",
-  "Account accessed from 2 locations",
-];
-
-const TX_CATEGORIES = ["Transfer", "Withdrawal", "Purchase", "International", "Large Deposit"];
-
 function randomBetween(a, b) { return Math.floor(Math.random() * (b - a + 1)) + a; }
-function randomFrom(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
-function randomFloat(a, b) { return parseFloat((Math.random() * (b - a) + a).toFixed(2)); }
 
-function generateEvent(user, forceRisk = false) {
-  const riskScore = forceRisk ? randomBetween(72, 99) : randomBetween(5, 99);
-  const isRisky = riskScore >= 65;
-  const amount = randomBetween(100, 49000);
-  return {
-    id: `EVT-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-    userId: user.id,
-    userName: user.name,
-    userAvatar: user.avatar,
-    type: randomFrom(TX_CATEGORIES),
-    amount,
-    riskScore,
-    isRisky,
-    reason: isRisky ? randomFrom(RISK_REASONS) : null,
-    device: user.device,
-    location: user.location,
-    timestamp: new Date(),
-    status: isRisky ? "flagged" : "clear",
-  };
+function toAvatar(name, fallback = "NA") {
+  if (!name) return fallback;
+  return name
+    .split(" ")
+    .map((part) => part[0] || "")
+    .join("")
+    .slice(0, 2)
+    .toUpperCase();
 }
 
 // ─── HELPERS ──────────────────────────────────────────────────────────────────
@@ -74,6 +47,59 @@ function timeAgo(date) {
 
 function fmtCurrency(n) {
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(n);
+}
+
+function normalizeUser(user) {
+  return {
+    id: user.id,
+    name: user.full_name || user.name || "Unknown User",
+    email: user.email || "unknown@example.com",
+    avatar: user.avatar || toAvatar(user.full_name || user.name, "NA"),
+    device: user.device || "Unknown Device",
+    location: user.location || "Unknown Location",
+  };
+}
+
+function normalizeEvent(event, userById) {
+  const userId = event.user_id || event.userId;
+  const user = userById.get(userId) || {};
+  return {
+    id: event.id,
+    userId,
+    userName: user.name || event.userName || "Unknown User",
+    userAvatar: user.avatar || event.userAvatar || "NA",
+    type: event.type,
+    amount: Number(event.amount || 0),
+    riskScore: Number(event.risk_score ?? event.riskScore ?? 0),
+    isRisky: Boolean(event.is_risky ?? event.isRisky),
+    reason: event.reason || "Normal activity",
+    device: event.device || user.device || "Unknown Device",
+    location: event.location || user.location || "Unknown Location",
+    timestamp: new Date(event.created_at || event.timestamp || Date.now()),
+    status: event.status || "clear",
+  };
+}
+
+function normalizeAlert(alert, userById, eventById) {
+  const event = eventById.get(alert.event_id || alert.eventId);
+  const userId = alert.user_id || alert.userId || event?.userId;
+  const user = userById.get(userId) || {};
+  return {
+    alertId: alert.id || alert.alertId,
+    eventId: alert.event_id || alert.eventId || event?.id || null,
+    userId,
+    userName: user.name || event?.userName || "Unknown User",
+    userAvatar: user.avatar || event?.userAvatar || "NA",
+    type: event?.type || "N/A",
+    amount: Number(event?.amount || 0),
+    riskScore: Number(alert.risk_score ?? alert.riskScore ?? event?.riskScore ?? 0),
+    reason: alert.reason || event?.reason || "Risk detected",
+    device: event?.device || user.device || "Unknown Device",
+    location: event?.location || user.location || "Unknown Location",
+    timestamp: new Date(alert.created_at || alert.timestamp || Date.now()),
+    read: Boolean(alert.is_read ?? alert.read),
+    status: alert.status || "open",
+  };
 }
 
 // ─── SPARKLINE COMPONENT ──────────────────────────────────────────────────────
@@ -193,6 +219,7 @@ function BarChart({ data, height = 80 }) {
 // ─── MAIN APP ─────────────────────────────────────────────────────────────────
 export default function Vigil() {
   const [view, setView] = useState("dashboard"); // dashboard | mobile
+  const [users, setUsers] = useState(FALLBACK_USERS);
   const [events, setEvents] = useState([]);
   const [alerts, setAlerts] = useState([]);
   const [selectedUser, setSelectedUser] = useState(null);
@@ -200,7 +227,7 @@ export default function Vigil() {
   const [riskHistory, setRiskHistory] = useState([]);
   const [txHistory, setTxHistory] = useState([]);
   const [activeTab, setActiveTab] = useState("overview");
-  const [mobileUser, setMobileUser] = useState(USERS[0]);
+  const [mobileUser, setMobileUser] = useState(FALLBACK_USERS[0]);
   const [mobileScreen, setMobileScreen] = useState("home");
   const [mobileLoading, setMobileLoading] = useState(false);
   const [mobileSent, setMobileSent] = useState(null);
@@ -215,49 +242,74 @@ export default function Vigil() {
   );
   const alertListRef = useRef(null);
   const prevAlertCount = useRef(0);
+  const [apiError, setApiError] = useState("");
 
-  // Simulated scores
-  useEffect(() => {
-    const init = {};
-    USERS.forEach(u => { init[u.id] = randomBetween(20, 95); });
-    setUserScores(init);
-    setRiskHistory(Array.from({ length: 20 }, () => randomBetween(20, 80)));
-    setTxHistory(Array.from({ length: 20 }, () => randomBetween(1000, 50000)));
-  }, []);
+  const refreshData = useCallback(async () => {
+    const [usersRes, eventsRes, alertsRes] = await Promise.all([
+      api.getUsers(),
+      api.getEvents({ limit: 100 }),
+      api.getAlerts({ limit: 100 }),
+    ]);
 
-  // Auto-generate events
-  useEffect(() => {
-    const generateNewEvent = () => {
-      const user = randomFrom(USERS);
-      const forceRisk = Math.random() < 0.35;
-      const evt = generateEvent(user, forceRisk);
-      setEvents(prev => [evt, ...prev].slice(0, 100));
-      setUserScores(prev => ({
-        ...prev,
-        [user.id]: evt.isRisky
-          ? Math.min(99, (prev[user.id] || 50) + randomBetween(5, 15))
-          : Math.max(5, (prev[user.id] || 50) - randomBetween(1, 5))
-      }));
-      setRiskHistory(prev => [...prev.slice(-19), evt.riskScore]);
-      setTxHistory(prev => [...prev.slice(-19), evt.amount]);
-      if (evt.isRisky) {
-        setAlerts(prev => [{
-          ...evt,
-          alertId: `ALRT-${Date.now()}`,
-          read: false,
-        }, ...prev].slice(0, 50));
-        setNewAlertCount(c => c + 1);
-      }
-      setHourlyData(prev => {
-        const updated = [...prev];
-        const idx = randomBetween(0, updated.length - 1);
-        updated[idx] = { ...updated[idx], value: updated[idx].value + 1 };
-        return updated;
+    const normalizedUsers = (usersRes.users || []).map(normalizeUser);
+    const safeUsers = normalizedUsers.length > 0 ? normalizedUsers : FALLBACK_USERS;
+    const userById = new Map(safeUsers.map((user) => [user.id, user]));
+    const normalizedEvents = (eventsRes.events || []).map((event) => normalizeEvent(event, userById));
+    const eventById = new Map(normalizedEvents.map((event) => [event.id, event]));
+    const normalizedAlerts = (alertsRes.alerts || []).map((alert) => normalizeAlert(alert, userById, eventById));
+
+    setUsers(safeUsers);
+    setEvents(normalizedEvents);
+    setAlerts(normalizedAlerts);
+    setRiskHistory(normalizedEvents.slice(0, 20).map((event) => event.riskScore).reverse());
+    setTxHistory(normalizedEvents.slice(0, 20).map((event) => event.amount).reverse());
+
+    const scores = {};
+    safeUsers.forEach((user) => {
+      const userEvents = normalizedEvents.filter((event) => event.userId === user.id);
+      scores[user.id] = userEvents[0]?.riskScore ?? 0;
+    });
+    setUserScores(scores);
+
+    setHourlyData((prev) => {
+      if (normalizedEvents.length === 0) return prev;
+      const buckets = Array.from({ length: 12 }, (_, index) => ({ label: `${index * 2}:00`, value: 0, color: "rgba(0,229,160,0.6)" }));
+      normalizedEvents.forEach((event) => {
+        const hour = event.timestamp.getHours();
+        const bucketIndex = Math.min(11, Math.floor(hour / 2));
+        buckets[bucketIndex].value += 1;
       });
-    };
-    const interval = setInterval(generateNewEvent, randomBetween(2000, 5000));
-    return () => clearInterval(interval);
+      return buckets;
+    });
+
+    if (prevAlertCount.current > 0 && normalizedAlerts.length > prevAlertCount.current) {
+      setNewAlertCount((count) => count + (normalizedAlerts.length - prevAlertCount.current));
+    }
+    prevAlertCount.current = normalizedAlerts.length;
+
+    setMobileUser((prev) => safeUsers.find((user) => user.id === prev?.id) || safeUsers[0]);
+    setSelectedUser((prev) => (prev ? safeUsers.find((user) => user.id === prev.id) || null : null));
+    setApiError("");
   }, []);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const load = async () => {
+      try {
+        await refreshData();
+      } catch (error) {
+        if (isMounted) setApiError(error.message || "Failed to sync backend data");
+      }
+    };
+
+    load();
+    const interval = setInterval(load, 5000);
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
+  }, [refreshData]);
 
   // Live indicator pulse
   useEffect(() => {
@@ -277,40 +329,59 @@ export default function Vigil() {
     events.filter(e => !e.isRisky);
 
   // Mobile: send transaction
-  const sendMobileTransaction = useCallback((forceRisk = false) => {
+  const sendMobileTransaction = useCallback(async (forceRisk = false) => {
     setMobileLoading(true);
-    const amt = parseInt(mobileAmount.replace(/,/g, "")) || 1500;
-    setTimeout(() => {
-      const evt = generateEvent(mobileUser, forceRisk || amt > 20000);
-      evt.amount = amt;
-      evt.userName = mobileUser.name;
-      evt.userAvatar = mobileUser.avatar;
-      setEvents(prev => [evt, ...prev].slice(0, 100));
-      if (evt.isRisky) {
-        setAlerts(prev => [{ ...evt, alertId: `ALRT-${Date.now()}`, read: false }, ...prev].slice(0, 50));
-        setNewAlertCount(c => c + 1);
-      }
-      setMobileLoading(false);
-      setMobileSent(evt);
-      setMobileScreen("receipt");
-    }, 1800);
-  }, [mobileUser, mobileAmount]);
+    try {
+      const parsedAmount = parseInt(mobileAmount.replace(/,/g, ""), 10) || 1500;
+      const amount = forceRisk ? Math.max(parsedAmount, 25000) : parsedAmount;
+      const type = forceRisk ? "International" : "Transfer";
+      const result = await api.createTransaction({
+        userId: mobileUser.id,
+        recipient: mobileRecipient,
+        amount,
+        device: mobileUser.device,
+        location: mobileUser.location,
+        type,
+      });
 
-  const doMobileLogin = useCallback(() => {
-    setMobileLoading(true);
-    setTimeout(() => {
-      const evt = generateEvent(mobileUser, Math.random() < 0.3);
-      evt.type = "Login";
-      evt.amount = 0;
-      setEvents(prev => [evt, ...prev].slice(0, 100));
-      if (evt.isRisky) {
-        setAlerts(prev => [{ ...evt, alertId: `ALRT-${Date.now()}`, read: false }, ...prev].slice(0, 50));
-        setNewAlertCount(c => c + 1);
-      }
+      const transaction = result.transaction;
+      const alert = result.alert;
+      setMobileSent({
+        id: transaction.id,
+        amount: Number(transaction.amount || 0),
+        riskScore: Number(transaction.risk_score || 0),
+        isRisky: transaction.status === "flagged",
+        reason: alert?.reason || "Normal activity",
+        timestamp: new Date(transaction.created_at || Date.now()),
+      });
+      setMobileScreen("receipt");
+      await refreshData();
+    } catch (error) {
+      setApiError(error.message || "Failed to submit transaction");
+    } finally {
       setMobileLoading(false);
+    }
+  }, [mobileAmount, mobileRecipient, mobileUser, refreshData]);
+
+  const doMobileLogin = useCallback(async () => {
+    setMobileLoading(true);
+    try {
+      await api.createEvent({
+        userId: mobileUser.id,
+        type: "Login",
+        amount: 0,
+        device: mobileUser.device,
+        location: mobileUser.location,
+        metadata: { source: "mobile_sim" },
+      });
+      await refreshData();
       setMobileScreen("home");
-    }, 1500);
-  }, [mobileUser]);
+    } catch (error) {
+      setApiError(error.message || "Failed to send login event");
+    } finally {
+      setMobileLoading(false);
+    }
+  }, [mobileUser, refreshData]);
 
   const styles = getStyles();
 
@@ -379,7 +450,7 @@ export default function Vigil() {
             {sidebarOpen && (
               <div style={styles.sidebarUsers}>
                 <div style={styles.sidebarSectionLabel}>MONITORED</div>
-                {USERS.map(u => (
+                {users.map(u => (
                   <div key={u.id} style={styles.sidebarUser} onClick={() => { setSelectedUser(u); setActiveTab("users"); }}>
                     <div style={{ ...styles.miniAvatar, background: riskColor(userScores[u.id] || 50) + "33", borderColor: riskColor(userScores[u.id] || 50) }}>
                       {u.avatar}
@@ -563,7 +634,7 @@ export default function Vigil() {
                   <h2 style={styles.pageTitle}>User Monitor</h2>
                 </div>
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(340px, 1fr))", gap: "16px" }}>
-                  {USERS.map(u => {
+                  {users.map(u => {
                     const score = userScores[u.id] || 0;
                     const userEvents = events.filter(e => e.userId === u.id).slice(0, 5);
                     const userRiskHistory = events.filter(e => e.userId === u.id).slice(0, 15).map(e => e.riskScore).reverse();
@@ -691,7 +762,7 @@ export default function Vigil() {
             {/* Desktop side panel */}
             <div style={styles.mobilePanelLeft}>
               <div style={styles.panelTitle}>Select User</div>
-              {USERS.map(u => (
+              {users.map(u => (
                 <div key={u.id} style={{ ...styles.mobileUserItem, ...(mobileUser.id === u.id ? styles.mobileUserItemActive : {}) }}
                   onClick={() => setMobileUser(u)}>
                   <div style={{ ...styles.miniAvatar, background: riskColor(userScores[u.id] || 50) + "33", borderColor: riskColor(userScores[u.id] || 50) }}>

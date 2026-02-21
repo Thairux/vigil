@@ -16,6 +16,9 @@ Required variables:
 - `SUPABASE_URL`
 - `SUPABASE_SERVICE_ROLE_KEY`
 
+Optional frontend variable:
+- `VITE_API_BASE_URL` (defaults to `http://localhost:4000/api`)
+
 ### 2) Create database tables
 
 Run the SQL in `supabase/schema.sql` in the Supabase SQL Editor.
