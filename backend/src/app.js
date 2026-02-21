@@ -1,5 +1,8 @@
 import cors from "cors";
 import express from "express";
+import rateLimit from "express-rate-limit";
+import helmet from "helmet";
+import { env } from "./config/env.js";
 import { alertsRouter } from "./routes/alerts.js";
 import { authRouter } from "./routes/auth.js";
 import { dashboardRouter } from "./routes/dashboard.js";
@@ -11,7 +14,24 @@ import { requireAuth, requireRole } from "./middleware/auth.js";
 
 export const app = express();
 
-app.use(cors());
+const allowedOrigins =
+  env.CORS_ORIGIN === "*"
+    ? true
+    : env.CORS_ORIGIN.split(",")
+        .map((origin) => origin.trim())
+        .filter(Boolean);
+
+app.set("trust proxy", env.TRUST_PROXY ? 1 : 0);
+app.use(helmet());
+app.use(
+  rateLimit({
+    windowMs: env.RATE_LIMIT_WINDOW_MS,
+    limit: env.RATE_LIMIT_MAX,
+    standardHeaders: "draft-8",
+    legacyHeaders: false,
+  }),
+);
+app.use(cors({ origin: allowedOrigins, credentials: true }));
 app.use(express.json({ limit: "1mb" }));
 
 app.get("/", (_req, res) => {

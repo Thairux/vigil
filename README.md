@@ -58,6 +58,24 @@ This starts:
 npm run test:backend
 ```
 
+## Production Setup
+
+1. Copy `.env.production.example` to your production secret manager/environment.
+2. Set required secrets:
+ - `SUPABASE_URL`
+ - `SUPABASE_SERVICE_ROLE_KEY`
+ - `SUPABASE_DB_URL`
+3. Set API protection/env:
+ - `CORS_ORIGIN` to your frontend domain(s)
+ - `TRUST_PROXY=true` when behind a reverse proxy/load balancer
+ - `RATE_LIMIT_WINDOW_MS` / `RATE_LIMIT_MAX` per traffic profile
+4. Build frontend and run backend:
+
+```bash
+npm run build
+npm run start
+```
+
 ### Backend API endpoints
 - `GET /api/health`
 - `GET /api/dashboard/summary`
