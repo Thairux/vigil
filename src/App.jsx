@@ -53,8 +53,10 @@ function fmtCurrency(n) {
 function normalizeUser(user) {
   return {
     id: user.id,
+    authUserId: user.auth_user_id || user.authUserId || null,
     name: user.full_name || user.name || "Unknown User",
     email: user.email || "unknown@example.com",
+    role: user.role || "customer",
     avatar: user.avatar || toAvatar(user.full_name || user.name, "NA"),
     device: user.device || "Unknown Device",
     location: user.location || "Unknown Location",
@@ -251,6 +253,7 @@ export default function Vigil() {
   const [authError, setAuthError] = useState("");
   const [authLoading, setAuthLoading] = useState(false);
   const [authProfile, setAuthProfile] = useState(null);
+  const [roleEdits, setRoleEdits] = useState({});
 
   useEffect(() => {
     setApiAuthTokenProvider(async () => {
@@ -316,6 +319,7 @@ export default function Vigil() {
       const normalizedEvents = (eventsRes.events || []).map((event) => normalizeEvent(event, userById));
 
       setUsers(safeUsers);
+      setRoleEdits({ [mappedCustomer.id]: mappedCustomer.role || "customer" });
       setEvents(normalizedEvents);
       setAlerts([]);
       setRiskHistory(normalizedEvents.slice(0, 20).map((event) => event.riskScore).reverse());
@@ -347,6 +351,13 @@ export default function Vigil() {
     const normalizedAlerts = (alertsRes.alerts || []).map((alert) => normalizeAlert(alert, userById, eventById));
 
     setUsers(safeUsers);
+    setRoleEdits((prev) => {
+      const next = { ...prev };
+      safeUsers.forEach((user) => {
+        if (!next[user.id]) next[user.id] = user.role || "customer";
+      });
+      return next;
+    });
     setEvents(normalizedEvents);
     setAlerts(normalizedAlerts);
     setRiskHistory(normalizedEvents.slice(0, 20).map((event) => event.riskScore).reverse());
@@ -512,6 +523,17 @@ export default function Vigil() {
       setApiError(error.message || "Failed to update alert");
     }
   }, [refreshData]);
+
+  const updateUserRole = useCallback(async (userId) => {
+    try {
+      const role = roleEdits[userId];
+      if (!role) return;
+      await api.updateUserRole(userId, { role });
+      await refreshData();
+    } catch (error) {
+      setApiError(error.message || "Failed to update user role");
+    }
+  }, [refreshData, roleEdits]);
 
   const signIn = useCallback(async () => {
     if (!supabaseClient) return;
@@ -859,6 +881,9 @@ export default function Vigil() {
                           <div style={{ flex: 1 }}>
                             <div style={{ color: "#fff", fontWeight: "600", fontSize: "14px", fontFamily: "'DM Sans', sans-serif" }}>{u.name}</div>
                             <div style={{ color: "rgba(255,255,255,0.35)", fontSize: "11px" }}>{u.email}</div>
+                            <div style={{ marginTop: "4px", display: "inline-flex", background: "rgba(123,140,255,0.15)", border: "1px solid rgba(123,140,255,0.35)", borderRadius: "6px", padding: "2px 6px", color: "#7b8cff", fontSize: "10px", fontFamily: "monospace" }}>
+                              ROLE: {(u.role || "customer").toUpperCase()}
+                            </div>
                           </div>
                           <div style={{ textAlign: "right" }}>
                             <div style={{ color: riskColor(score), fontFamily: "monospace", fontWeight: "700", fontSize: "22px" }}>{score}</div>
@@ -881,6 +906,23 @@ export default function Vigil() {
                             </div>
                           ))}
                         </div>
+                        {authRole === "admin" && (
+                          <div style={{ display: "flex", gap: "8px", marginBottom: "12px" }}>
+                            <select
+                              value={roleEdits[u.id] || u.role || "customer"}
+                              onChange={(e) => setRoleEdits((prev) => ({ ...prev, [u.id]: e.target.value }))}
+                              onClick={(e) => e.stopPropagation()}
+                              style={{ ...styles.phoneInput, padding: "8px 10px", fontSize: "12px", flex: 1 }}
+                            >
+                              {["admin", "analyst", "customer"].map((role) => (
+                                <option key={role} value={role}>{role}</option>
+                              ))}
+                            </select>
+                            <button style={{ ...styles.filterBtn, ...styles.filterBtnActive }} onClick={(e) => { e.stopPropagation(); updateUserRole(u.id); }}>
+                              Update Role
+                            </button>
+                          </div>
+                        )}
                         {userRiskHistory.length > 0 && (
                           <div>
                             <div style={{ fontSize: "9px", color: "rgba(255,255,255,0.3)", fontFamily: "monospace", marginBottom: "4px" }}>RISK TREND</div>

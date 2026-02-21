@@ -62,6 +62,7 @@ npm run test:backend
 - `GET /api/health`
 - `GET /api/dashboard/summary`
 - `GET /api/users`
+- `PATCH /api/users/:userId/role` (admin only)
 - `GET /api/events`
 - `POST /api/events`
 - `GET /api/alerts`

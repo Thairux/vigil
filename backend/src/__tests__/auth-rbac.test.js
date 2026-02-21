@@ -94,4 +94,13 @@ describe("auth and rbac middleware", () => {
     const response = await request(app).get("/api/dashboard/summary").set("Authorization", "Bearer customer-token");
     expect(response.status).toBe(403);
   });
+
+  it("allows only admin role for role management endpoint", async () => {
+    const response = await request(app)
+      .patch("/api/users/11111111-1111-1111-1111-111111111111/role")
+      .set("Authorization", "Bearer analyst-token")
+      .send({ role: "customer" });
+
+    expect(response.status).toBe(403);
+  });
 });

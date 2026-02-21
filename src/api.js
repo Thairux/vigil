@@ -27,6 +27,9 @@ export const api = {
   getUsers() {
     return request("/users");
   },
+  updateUserRole(userId, body) {
+    return request(`/users/${userId}/role`, { method: "PATCH", body: JSON.stringify(body) });
+  },
   getEvents(params = {}) {
     const query = new URLSearchParams();
     if (params.limit) query.set("limit", String(params.limit));
