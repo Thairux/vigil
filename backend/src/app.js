@@ -14,12 +14,29 @@ import { requireAuth, requireRole } from "./middleware/auth.js";
 
 export const app = express();
 
-const allowedOrigins =
-  env.CORS_ORIGIN === "*"
-    ? true
-    : env.CORS_ORIGIN.split(",")
-        .map((origin) => origin.trim())
-        .filter(Boolean);
+const allowedOrigins = env.CORS_ORIGIN.split(",")
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+
+const corsOptions = {
+  origin(origin, callback) {
+    // Allow same-origin/server-to-server requests with no Origin header.
+    if (!origin) return callback(null, true);
+
+    if (env.CORS_ORIGIN === "*") return callback(null, true);
+    if (allowedOrigins.includes(origin)) return callback(null, true);
+
+    // Always allow localhost origins in development for local testing.
+    if (env.NODE_ENV !== "production" && /^https?:\/\/localhost(:\d+)?$/.test(origin)) {
+      return callback(null, true);
+    }
+
+    return callback(new Error(`CORS blocked for origin: ${origin}`));
+  },
+  credentials: true,
+  methods: ["GET", "HEAD", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Authorization", "Content-Type"],
+};
 
 app.set("trust proxy", env.TRUST_PROXY ? 1 : 0);
 app.use(helmet());
@@ -31,7 +48,8 @@ app.use(
     legacyHeaders: false,
   }),
 );
-app.use(cors({ origin: allowedOrigins, credentials: true }));
+app.use(cors(corsOptions));
+app.options(/.*/, cors(corsOptions));
 app.use(express.json({ limit: "1mb" }));
 
 app.get("/", (_req, res) => {
