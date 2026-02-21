@@ -63,6 +63,8 @@ Role access:
 - `admin` / `analyst`: dashboard reads, alerts management
 - `customer`: event/transaction creation
 
+Realtime updates use Supabase Realtime subscriptions on `events` and `alerts`.
+
 ## Run locally
 
 ```bash

@@ -364,6 +364,30 @@ export default function Vigil() {
     };
   }, [authReady, authSession, refreshData]);
 
+  useEffect(() => {
+    if (!supabaseClient) return;
+    if (!authSession) return;
+
+    let refreshTimer = null;
+    const scheduleRefresh = () => {
+      if (refreshTimer) clearTimeout(refreshTimer);
+      refreshTimer = setTimeout(() => {
+        refreshData().catch((error) => setApiError(error.message || "Realtime sync failed"));
+      }, 250);
+    };
+
+    const channel = supabaseClient
+      .channel("vigil-realtime")
+      .on("postgres_changes", { event: "*", schema: "public", table: "events" }, scheduleRefresh)
+      .on("postgres_changes", { event: "*", schema: "public", table: "alerts" }, scheduleRefresh)
+      .subscribe();
+
+    return () => {
+      if (refreshTimer) clearTimeout(refreshTimer);
+      supabaseClient.removeChannel(channel);
+    };
+  }, [authSession, refreshData]);
+
   // Live indicator pulse
   useEffect(() => {
     const t = setInterval(() => setLiveIndicator(p => !p), 1000);
