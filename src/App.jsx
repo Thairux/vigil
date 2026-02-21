@@ -294,13 +294,51 @@ export default function Vigil() {
       .catch((error) => setApiError(error.message || "Failed to load auth profile"));
   }, [authSession]);
 
-  const refreshData = useCallback(async () => {
-    const [usersRes, eventsRes, alertsRes] = await Promise.all([
-      api.getUsers(),
-      api.getEvents({ limit: 100 }),
-      api.getAlerts({ limit: 100 }),
-    ]);
+  const authRole = authProfile?.role || null;
+  const isCustomer = authRole === "customer";
 
+  const refreshData = useCallback(async () => {
+    if (isCustomer) {
+      const eventsRes = await api.getEvents({ limit: 100 });
+      const mappedCustomer = authProfile?.profile
+        ? normalizeUser(authProfile.profile)
+        : {
+            id: authProfile?.id || mobileUser.id,
+            name: authProfile?.email?.split("@")[0] || mobileUser.name,
+            email: authProfile?.email || mobileUser.email,
+            avatar: toAvatar(authProfile?.email || mobileUser.name),
+            device: mobileUser.device,
+            location: mobileUser.location,
+          };
+
+      const safeUsers = [mappedCustomer];
+      const userById = new Map([[mappedCustomer.id, mappedCustomer]]);
+      const normalizedEvents = (eventsRes.events || []).map((event) => normalizeEvent(event, userById));
+
+      setUsers(safeUsers);
+      setEvents(normalizedEvents);
+      setAlerts([]);
+      setRiskHistory(normalizedEvents.slice(0, 20).map((event) => event.riskScore).reverse());
+      setTxHistory(normalizedEvents.slice(0, 20).map((event) => event.amount).reverse());
+      setUserScores({ [mappedCustomer.id]: normalizedEvents[0]?.riskScore ?? 0 });
+      setHourlyData((prev) => {
+        if (normalizedEvents.length === 0) return prev;
+        const buckets = Array.from({ length: 12 }, (_, index) => ({ label: `${index * 2}:00`, value: 0, color: "rgba(0,229,160,0.6)" }));
+        normalizedEvents.forEach((event) => {
+          const bucketIndex = Math.min(11, Math.floor(event.timestamp.getHours() / 2));
+          buckets[bucketIndex].value += 1;
+        });
+        return buckets;
+      });
+      setNewAlertCount(0);
+      prevAlertCount.current = 0;
+      setMobileUser(mappedCustomer);
+      setSelectedUser(mappedCustomer);
+      setApiError("");
+      return;
+    }
+
+    const [usersRes, eventsRes, alertsRes] = await Promise.all([api.getUsers(), api.getEvents({ limit: 100 }), api.getAlerts({ limit: 100 })]);
     const normalizedUsers = (usersRes.users || []).map(normalizeUser);
     const safeUsers = normalizedUsers.length > 0 ? normalizedUsers : FALLBACK_USERS;
     const userById = new Map(safeUsers.map((user) => [user.id, user]));
@@ -340,11 +378,12 @@ export default function Vigil() {
     setMobileUser((prev) => safeUsers.find((user) => user.id === prev?.id) || safeUsers[0]);
     setSelectedUser((prev) => (prev ? safeUsers.find((user) => user.id === prev.id) || null : null));
     setApiError("");
-  }, []);
+  }, [authProfile, isCustomer, mobileUser.device, mobileUser.email, mobileUser.id, mobileUser.location, mobileUser.name]);
 
   useEffect(() => {
     if (!authReady) return;
     if (hasSupabaseClientConfig && !authSession) return;
+    if (hasSupabaseClientConfig && authSession && !authProfile) return;
 
     let isMounted = true;
 
@@ -362,7 +401,7 @@ export default function Vigil() {
       isMounted = false;
       clearInterval(interval);
     };
-  }, [authReady, authSession, refreshData]);
+  }, [authReady, authProfile, authSession, refreshData]);
 
   useEffect(() => {
     if (!supabaseClient) return;
@@ -387,6 +426,11 @@ export default function Vigil() {
       supabaseClient.removeChannel(channel);
     };
   }, [authSession, refreshData]);
+
+  useEffect(() => {
+    if (!isCustomer) return;
+    if (view !== "mobile") setView("mobile");
+  }, [isCustomer, view]);
 
   // Live indicator pulse
   useEffect(() => {
@@ -518,7 +562,7 @@ export default function Vigil() {
           {authError && <div style={{ color: "#ff8c00", fontSize: "12px", marginBottom: "10px" }}>{authError}</div>}
           <button onClick={signIn} disabled={authLoading || !authEmail || !authPassword} style={{ width: "100%", background: "rgba(0,229,160,0.15)", border: "1px solid rgba(0,229,160,0.35)", borderRadius: "10px", color: "#00e5a0", padding: "11px 12px", fontWeight: "600", cursor: "pointer" }}>
             {authLoading ? "Signing in..." : "Sign In"}
-          </button>
+            </button>
         </div>
       </div>
     );
@@ -542,10 +586,12 @@ export default function Vigil() {
           </div>
         </div>
         <div style={styles.navTabs}>
-          <button style={{ ...styles.navTab, ...(view === "dashboard" ? styles.navTabActive : {}) }} onClick={() => setView("dashboard")}>
-            <span>⬡</span> Dashboard
-          </button>
-          <button style={{ ...styles.navTab, ...(view === "mobile" ? styles.navTabActive : {}) }} onClick={() => setView("mobile")}>
+          {!isCustomer && (
+            <button style={{ ...styles.navTab, ...(view === 'dashboard' ? styles.navTabActive : {}) }} onClick={() => setView('dashboard')}>
+              <span>⬡</span> Dashboard
+            </button>
+          )}
+          <button style={{ ...styles.navTab, ...(view === 'mobile' ? styles.navTabActive : {}) }} onClick={() => setView('mobile')}>
             <span>◈</span> Mobile Sim
           </button>
         </div>
@@ -572,7 +618,7 @@ export default function Vigil() {
         </div>
       </nav>
 
-      {view === "dashboard" ? (
+      {view === "dashboard" && !isCustomer ? (
         <div style={styles.dashLayout}>
           {/* Sidebar */}
           <aside style={{ ...styles.sidebar, width: sidebarOpen ? "220px" : "60px" }}>

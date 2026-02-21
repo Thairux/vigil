@@ -86,6 +86,10 @@ Role access:
 
 Realtime updates use Supabase Realtime subscriptions on `events` and `alerts`.
 
+Frontend protection:
+- `customer` role is forced into mobile simulator flow.
+- dashboard views/actions are not rendered for customer role.
+
 ## Run locally
 
 ```bash
