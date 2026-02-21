@@ -12,6 +12,18 @@ const FALLBACK_USERS = [
 ];
 
 function randomBetween(a, b) { return Math.floor(Math.random() * (b - a + 1)) + a; }
+function randomFrom(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
+
+const DEMO_RISK_REASONS = [
+  "Unusual transaction amount",
+  "New device detected",
+  "Off-hours login",
+  "Multiple failed attempts",
+  "Geographic anomaly",
+  "Rapid successive transactions",
+];
+
+const DEMO_TX_TYPES = ["Transfer", "Withdrawal", "Purchase", "International", "Large Deposit"];
 
 function toAvatar(name, fallback = "NA") {
   if (!name) return fallback;
@@ -238,6 +250,7 @@ export default function Vigil() {
   const [mobileRecipient, setMobileRecipient] = useState("Alex Johnson");
   const [newAlertCount, setNewAlertCount] = useState(0);
   const [liveIndicator, setLiveIndicator] = useState(true);
+  const [demoMode, setDemoMode] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [filterRisk, setFilterRisk] = useState("all");
   const [hourlyData, setHourlyData] = useState(() =>
@@ -299,6 +312,28 @@ export default function Vigil() {
 
   const authRole = authProfile?.role || null;
   const isCustomer = authRole === "customer";
+
+  const createLocalDemoEvent = useCallback((user, options = {}) => {
+    const score = options.forceRisk ? randomBetween(72, 99) : randomBetween(8, 95);
+    const risky = score >= 60;
+    const amount = options.amount ?? randomBetween(120, 49000);
+    const timestamp = new Date();
+    return {
+      id: `DEMO-EVT-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      userId: user.id,
+      userName: user.name,
+      userAvatar: user.avatar || toAvatar(user.name),
+      type: options.type || randomFrom(DEMO_TX_TYPES),
+      amount,
+      riskScore: score,
+      isRisky: risky,
+      reason: risky ? randomFrom(DEMO_RISK_REASONS) : "Normal activity",
+      device: user.device || "Unknown Device",
+      location: user.location || "Unknown Location",
+      timestamp,
+      status: risky ? "flagged" : "clear",
+    };
+  }, []);
 
   const refreshData = useCallback(async () => {
     if (isCustomer) {
@@ -395,6 +430,7 @@ export default function Vigil() {
     if (!authReady) return;
     if (hasSupabaseClientConfig && !authSession) return;
     if (hasSupabaseClientConfig && authSession && !authProfile) return;
+    if (demoMode) return;
 
     let isMounted = true;
 
@@ -412,11 +448,12 @@ export default function Vigil() {
       isMounted = false;
       clearInterval(interval);
     };
-  }, [authReady, authProfile, authSession, refreshData]);
+  }, [authReady, authProfile, authSession, demoMode, refreshData]);
 
   useEffect(() => {
     if (!supabaseClient) return;
     if (!authSession) return;
+    if (demoMode) return;
 
     let refreshTimer = null;
     const scheduleRefresh = () => {
@@ -436,12 +473,51 @@ export default function Vigil() {
       if (refreshTimer) clearTimeout(refreshTimer);
       supabaseClient.removeChannel(channel);
     };
-  }, [authSession, refreshData]);
+  }, [authSession, demoMode, refreshData]);
 
   useEffect(() => {
     if (!isCustomer) return;
     if (view !== "mobile") setView("mobile");
   }, [isCustomer, view]);
+
+  useEffect(() => {
+    if (!demoMode) {
+      if (authReady) {
+        refreshData().catch((error) => setApiError(error.message || "Failed to sync backend data"));
+      }
+      return;
+    }
+
+    const timer = setInterval(() => {
+      const candidates = users.length > 0 ? users : FALLBACK_USERS;
+      const user = randomFrom(candidates);
+      const event = createLocalDemoEvent(user, { forceRisk: Math.random() < 0.35 });
+
+      setEvents((prev) => [event, ...prev].slice(0, 100));
+      setUserScores((prev) => ({ ...prev, [user.id]: event.riskScore }));
+      setRiskHistory((prev) => [...prev.slice(-19), event.riskScore]);
+      setTxHistory((prev) => [...prev.slice(-19), event.amount]);
+      setHourlyData((prev) => {
+        const updated = [...prev];
+        const idx = randomBetween(0, updated.length - 1);
+        updated[idx] = { ...updated[idx], value: updated[idx].value + 1 };
+        return updated;
+      });
+
+      if (event.isRisky) {
+        const alert = {
+          ...event,
+          alertId: `DEMO-ALRT-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+          read: false,
+          status: "open",
+        };
+        setAlerts((prev) => [alert, ...prev].slice(0, 100));
+        setNewAlertCount((count) => count + 1);
+      }
+    }, randomBetween(1800, 3500));
+
+    return () => clearInterval(timer);
+  }, [authReady, createLocalDemoEvent, demoMode, refreshData, users]);
 
   // Live indicator pulse
   useEffect(() => {
@@ -464,6 +540,28 @@ export default function Vigil() {
   const sendMobileTransaction = useCallback(async (forceRisk = false) => {
     setMobileLoading(true);
     try {
+      if (demoMode) {
+        const parsedAmount = parseInt(mobileAmount.replace(/,/g, ""), 10) || 1500;
+        const amount = forceRisk ? Math.max(parsedAmount, 25000) : parsedAmount;
+        const type = forceRisk ? "International" : "Transfer";
+        const event = createLocalDemoEvent(mobileUser, { forceRisk, amount, type });
+        setEvents((prev) => [event, ...prev].slice(0, 100));
+        setUserScores((prev) => ({ ...prev, [mobileUser.id]: event.riskScore }));
+        if (event.isRisky) {
+          const alert = {
+            ...event,
+            alertId: `DEMO-ALRT-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+            read: false,
+            status: "open",
+          };
+          setAlerts((prev) => [alert, ...prev].slice(0, 100));
+          setNewAlertCount((count) => count + 1);
+        }
+        setMobileSent(event);
+        setMobileScreen("receipt");
+        return;
+      }
+
       const parsedAmount = parseInt(mobileAmount.replace(/,/g, ""), 10) || 1500;
       const amount = forceRisk ? Math.max(parsedAmount, 25000) : parsedAmount;
       const type = forceRisk ? "International" : "Transfer";
@@ -493,11 +591,29 @@ export default function Vigil() {
     } finally {
       setMobileLoading(false);
     }
-  }, [mobileAmount, mobileRecipient, mobileUser, refreshData]);
+  }, [createLocalDemoEvent, demoMode, mobileAmount, mobileRecipient, mobileUser, refreshData]);
 
   const doMobileLogin = useCallback(async () => {
     setMobileLoading(true);
     try {
+      if (demoMode) {
+        const event = createLocalDemoEvent(mobileUser, { type: "Login", amount: 0, forceRisk: Math.random() < 0.25 });
+        setEvents((prev) => [event, ...prev].slice(0, 100));
+        setUserScores((prev) => ({ ...prev, [mobileUser.id]: event.riskScore }));
+        if (event.isRisky) {
+          const alert = {
+            ...event,
+            alertId: `DEMO-ALRT-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+            read: false,
+            status: "open",
+          };
+          setAlerts((prev) => [alert, ...prev].slice(0, 100));
+          setNewAlertCount((count) => count + 1);
+        }
+        setMobileScreen("home");
+        return;
+      }
+
       await api.createEvent({
         userId: mobileUser.id,
         type: "Login",
@@ -513,7 +629,7 @@ export default function Vigil() {
     } finally {
       setMobileLoading(false);
     }
-  }, [mobileUser, refreshData]);
+  }, [createLocalDemoEvent, demoMode, mobileUser, refreshData]);
 
   const updateAlert = useCallback(async (alertId, updates) => {
     try {
@@ -627,6 +743,12 @@ export default function Vigil() {
               ROLE: {String(authProfile.role).toUpperCase()}
             </div>
           )}
+          <button
+            style={{ ...styles.filterBtn, ...(demoMode ? styles.filterBtnActive : {}), fontSize: "11px" }}
+            onClick={() => setDemoMode((prev) => !prev)}
+          >
+            Demo: {demoMode ? "ON" : "OFF"}
+          </button>
           {newAlertCount > 0 && (
             <div style={styles.alertBadge} onClick={() => { setActiveTab("alerts"); setView("dashboard"); setNewAlertCount(0); }}>
               <span>⚠</span> {newAlertCount} new
@@ -1377,7 +1499,9 @@ function getStyles() {
       width: "100%",
       textAlign: "left",
       transition: "all 0.15s",
-      borderLeft: "2px solid transparent",
+      borderLeftWidth: "2px",
+      borderLeftStyle: "solid",
+      borderLeftColor: "transparent",
     },
     sidebarItemActive: {
       background: "rgba(0,229,160,0.08)",
@@ -1470,7 +1594,9 @@ function getStyles() {
       gap: "12px",
       background: "rgba(255,255,255,0.03)",
       border: "1px solid rgba(255,255,255,0.06)",
-      borderLeft: "3px solid",
+      borderLeftWidth: "3px",
+      borderLeftStyle: "solid",
+      borderLeftColor: "transparent",
       borderRadius: "8px",
       padding: "10px 12px",
       animation: "slideIn 0.3s ease",
@@ -1478,7 +1604,9 @@ function getStyles() {
     alertCard: {
       background: "rgba(255,255,255,0.03)",
       border: "1px solid rgba(255,255,255,0.07)",
-      borderLeft: "3px solid",
+      borderLeftWidth: "3px",
+      borderLeftStyle: "solid",
+      borderLeftColor: "transparent",
       borderRadius: "12px",
       padding: "16px",
     },
@@ -1545,7 +1673,9 @@ function getStyles() {
       borderBottom: "1px solid rgba(255,255,255,0.07)",
     },
     tr: {
-      borderLeft: "2px solid transparent",
+      borderLeftWidth: "2px",
+      borderLeftStyle: "solid",
+      borderLeftColor: "transparent",
       borderBottom: "1px solid rgba(255,255,255,0.04)",
       transition: "background 0.15s",
     },
@@ -1642,7 +1772,9 @@ function getStyles() {
     },
     feedItem: {
       padding: "8px 10px",
-      borderLeft: "2px solid",
+      borderLeftWidth: "2px",
+      borderLeftStyle: "solid",
+      borderLeftColor: "transparent",
       background: "rgba(255,255,255,0.02)",
       borderRadius: "0 6px 6px 0",
       marginBottom: "6px",
